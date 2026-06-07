@@ -36,52 +36,45 @@ async def proxy_chat(request: Request):
             # --- Mode STREAMING ---
             async def generate():
                 try:
-                    async with httpx.AsyncClient() as client:
-                        async with client.stream(
-                                "POST",
-                                f"{MISTRAL_BASE_URL}/chat/completions",
-                                json=payload,
-                                headers=headers
-                        ) as mistral_response:
-                            if mistral_response.status_code == 429:
-                                error_detail = (await mistral_response.aread()).decode("utf-8")
-                                logger.warning(f"Rate Limit atteint. Attente de 1 seconde...")
-                                await asyncio.sleep(1)
-                                async with client.stream(
-                                        "POST",
-                                        f"{MISTRAL_BASE_URL}/chat/completions",
-                                        json=payload,
-                                        headers=headers
-                                ) as retry_response:
-                                    if retry_response.status_code != 200:
-                                        error_detail = await retry_response.aread()
-                                        logger.error(f"Erreur Mistral (streaming): {error_detail}")
-                                        yield f"data: {json.dumps({'error': error_detail})}\n\n"
-                                        return
-                                    async for line in retry_response.aiter_lines():
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-                                        if line.startswith("data:"):
-                                            yield f"{line}\n\n"
-                                        elif line == "[DONE]":
-                                            yield f"data: [DONE]\n\n"
-                            if mistral_response.status_code != 200:
-                                error_detail = await mistral_response.aread()
-                                logger.error(f"Erreur Mistral (streaming): {error_detail}")
-                                yield f"data: {json.dumps({'error': error_detail})}\n\n"
-                                return
-                            async for line in mistral_response.aiter_lines():
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if line.startswith("data:"):
-                                    yield f"{line}\n\n"
-                                elif line == "[DONE]":
-                                    yield f"data: [DONE]\n\n"
+                    timeout = httpx.Timeout(120.0, connect=60.0)
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        async def fetch_response(retry=True):
+                            async with client.stream(
+                                    "POST",
+                                    f"{MISTRAL_BASE_URL}/chat/completions",
+                                    json=payload,
+                                    headers=headers
+                            ) as mistral_response:
+                                if mistral_response.status_code == 429 and retry:
+                                    logger.warning(f"Rate Limit atteint. Attente de 1 seconde...")
+                                    await asyncio.sleep(1)
+                                    async for chunk in fetch_response(retry=False):
+                                        yield chunk
+                                    return
+                                if mistral_response.status_code != 200:
+                                    error_detail = await mistral_response.aread()
+                                    try:
+                                        error_json = json.loads(error_detail)
+                                        logger.error(f"Erreur Mistral (streaming): {error_json}")
+                                        yield f"data: {json.dumps({'error': error_json})}\n\n"
+                                    except:
+                                        error_text = error_detail.decode("utf-8", errors="replace")
+                                        logger.error(f"Erreur Mistral (streaming): {error_text}")
+                                        yield f"data: {json.dumps({'error': error_text})}\n\n"
+                                    return
+                                async for line in mistral_response.aiter_lines():
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    if line.startswith("data:"):
+                                        yield f"{line}\n\n"
+                                    elif line == "[DONE]":
+                                        yield f"data: [DONE]\n\n"
+                        async for chunk in fetch_response():
+                            yield chunk
                 except Exception as e:
-                    logger.error(f"Erreur dans le flux streaming: {str(e)}")
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    logger.exception(f"Erreur dans le flux streaming")
+                    yield f"data: {json.dumps({'error': str(e) or 'Internal Stream Error'})}\n\n"
             return StreamingResponse(
                 generate(),
                 media_type="text/event-stream"
@@ -89,7 +82,8 @@ async def proxy_chat(request: Request):
         else:
             # logger.info(f"Mode non-streaming activé pour la requête : {payload}")
             # --- Mode NON-STREAMING ---
-            async with httpx.AsyncClient() as client:
+            timeout = httpx.Timeout(120.0, connect=60.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
                     f"{MISTRAL_BASE_URL}/chat/completions",
                     json=payload,
