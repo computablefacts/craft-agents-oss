@@ -61,6 +61,56 @@ No. Everything is instant. Mention new skills or sources with `@`, even mid-conv
 **So I can just ask it anything?**
 Yes. That's the core idea behind agent-native software. You describe what you want, and it figures out how. That's a good use of tokens.
 
+## Mistral Connector
+
+The Mistral connector via pi is not properly working. To make it work, use the custom HTTP proxy in `mistral/`.
+
+### Setup
+
+1. Create in `mistral/` directory a `.env` file with your Mistral `API_KEY`:
+    ```text
+    MISTRAL_API_KEY=<your_api_key>
+    ```
+2. Start the HTTP proxy: 
+    ```bash
+    cd mistral/ && uvicorn main:app --reload
+    ```
+    Something similar to this should be displayed:
+    ```text
+    INFO:     Will watch for changes in these directories: ['/opt/a_src/craft-agents-oss/mistral']
+    INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+    INFO:     Started reloader process [88622] using StatReload
+    INFO:     Started server process [88624]
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    ```
+3. Configure a custom connector in Craft AI:
+    ```json
+    {
+      "llmConnections": [
+        {
+          "slug": "mistral-api-key",
+          "name": "Mistral (via proxy)",
+          "providerType": "pi_compat",
+          "authType": "none",
+          "createdAt": 1780846375332,
+          "baseUrl": "http://127.0.0.1:8000/v1",
+          "models": [
+            "mistral-small-latest",
+            "mistral-large-latest",
+            "mistral-medium-latest"
+          ],
+          "defaultModel": "mistral-small-latest",
+          "modelSelectionMode": "userDefined3Tier",
+          "customEndpoint": {
+            "api": "openai-completions"
+          },
+          "midStreamBehavior": "steer",
+          "lastUsedAt": 1780848289573
+        }
+      ]
+    }
+    ```
 
 ## Installation
 
