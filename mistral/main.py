@@ -32,7 +32,7 @@ async def proxy_chat(request: Request):
             "Content-Type": "application/json"
         }
         if stream:
-            logger.info(f"Mode streaming activé pour la requête : {payload}")
+            # logger.info(f"Mode streaming activé pour la requête : {payload}")
             # --- Mode STREAMING ---
             async def generate():
                 try:
@@ -87,7 +87,7 @@ async def proxy_chat(request: Request):
                 media_type="text/event-stream"
             )
         else:
-            logger.info(f"Mode non-streaming activé pour la requête : {payload}")
+            # logger.info(f"Mode non-streaming activé pour la requête : {payload}")
             # --- Mode NON-STREAMING ---
             async with httpx.AsyncClient() as client:
                 response = await client.post(
