@@ -61,19 +61,24 @@ No. Everything is instant. Mention new skills or sources with `@`, even mid-conv
 **So I can just ask it anything?**
 Yes. That's the core idea behind agent-native software. You describe what you want, and it figures out how. That's a good use of tokens.
 
-## Mistral Connector
+## Mistral / DeepInfra Connector
 
-The Mistral connector via pi is not properly working. To make it work, use the custom HTTP proxy in `mistral/`.
+The Pi Mistral connector may not work reliably with all models. To use Mistral and DeepInfra models, run the custom OpenAI-compatible HTTP proxy in `api-proxy/`.
 
 ### Setup
 
-1. Create in `mistral/` directory a `.env` file with your Mistral `API_KEY`:
+1. Create in `api-proxy/` directory a `.env` file with your Mistral or/and DeepInfra `API_KEY`:
     ```text
     MISTRAL_API_KEY=<your_api_key>
+    DEEPINFRA_API_KEY=<your_deepinfra_api_key>
     ```
-2. Start the HTTP proxy: 
+2. Install the proxy dependencies and start the HTTP proxy:
     ```bash
-    cd mistral/ && uvicorn main:app --reload
+    cd api-proxy/ && pip install -r requirements.txt
+    ```
+3. Start the HTTP proxy: 
+    ```bash
+    cd api-proxy/ && uvicorn main:app --reload
     ```
     Something similar to this should be displayed:
     ```text
@@ -84,7 +89,7 @@ The Mistral connector via pi is not properly working. To make it work, use the c
     INFO:     Waiting for application startup.
     INFO:     Application startup complete.
     ```
-3. Configure a custom connector in Craft AI:
+4. Configure a custom connector in Craft AI:
     ```json
     {
       "llmConnections": [
@@ -96,11 +101,11 @@ The Mistral connector via pi is not properly working. To make it work, use the c
           "createdAt": 1780846375332,
           "baseUrl": "http://127.0.0.1:8000/v1",
           "models": [
-            "mistral-small-latest",
-            "mistral-large-latest",
-            "mistral-medium-latest"
+            "deepseek-ai/DeepSeek-V4-Flash@deepinfra",
+            "mistral-small-latest@mistral",
+            "mistral-medium-latest@mistral"
           ],
-          "defaultModel": "mistral-small-latest",
+          "defaultModel": "deepseek-ai/DeepSeek-V4-Flash@deepinfra",
           "modelSelectionMode": "userDefined3Tier",
           "customEndpoint": {
             "api": "openai-completions"
@@ -111,6 +116,13 @@ The Mistral connector via pi is not properly working. To make it work, use the c
       ]
     }
     ```
+
+Models must include a provider suffix:
+
+- Mistral models: `model-name@mistral`
+- DeepInfra models: `provider/model-name@deepinfra`
+
+The proxy removes the suffix before forwarding the request to the selected provider.
 
 ## Installation
 
