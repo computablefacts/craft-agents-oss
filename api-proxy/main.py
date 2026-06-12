@@ -40,6 +40,28 @@ def get_provider_config(provider: str):
     return config
 
 
+def parse_model(payload: dict) -> tuple[str, str]:
+    """Extract (model_name, provider_slug) from the model field.
+
+    Formats accceptés :
+    - "deepseek-ai/DeepSeek-V4-Flash@deepinfra"  → ("deepseek-ai/DeepSeek-V4-Flash", "deepinfra")
+    - "mistral-medium-3-5@mistral"               → ("mistral-medium-3-5", "mistral")
+    """
+    original = payload.get("model", "")
+    if "@" not in original:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model must include provider suffix (e.g., 'model@deepinfra'). Got: '{original}'"
+        )
+    model_name, provider = original.rsplit("@", 1)
+    if provider not in PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider '{provider}'. Supported: {list(PROVIDERS.keys())}"
+        )
+    return model_name, provider
+
+
 def clean_payload(payload: dict):
     """Remove Craft Agents specific fields that external APIs don't support."""
     for field in ("store", "stream_options", "max_completion_tokens"):
@@ -96,13 +118,16 @@ async def stream_from_provider(provider_cfg: dict, payload: dict):
 
 # ── Routes ──
 
-@app.post("/{provider}/chat/completions")
-async def proxy_chat(provider: str, request: Request):
-    provider_cfg = get_provider_config(provider)
+@app.post("/chat/completions")
+async def proxy_chat(request: Request):
     try:
         payload = await request.json()
         clean_payload(payload)
 
+        # Extract model name & provider from the "model@provider" format
+        model_name, provider = parse_model(payload)
+        payload["model"] = model_name
+        provider_cfg = get_provider_config(provider)
         stream = payload.get("stream", False)
         headers = {
             "Authorization": f"Bearer {provider_cfg['api_key']}",
@@ -132,7 +157,7 @@ async def proxy_chat(provider: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/{provider}/models")
+@app.get("/models")
 async def proxy_models(provider: str):
     provider_cfg = get_provider_config(provider)
     headers = {"Authorization": f"Bearer {provider_cfg['api_key']}"}
@@ -147,14 +172,12 @@ async def root():
     return {
         "service": "API Proxy Fusionné",
         "providers": list(PROVIDERS.keys()),
-        "endpoints": {
-            "deepinfra": {
-                "chat": "POST /deepinfra/chat/completions",
-                "models": "GET /deepinfra/models",
-            },
-            "mistral": {
-                "chat": "POST /mistral/chat/completions",
-                "models": "GET /mistral/models",
-            },
+        "usage": {
+            "chat": 'POST /chat/completions  with {"model": "model_name@provider"}',
+            "models": 'GET /models?provider=deepinfra',
+        },
+        "examples": {
+            "deepinfra": '{"model": "deepseek-ai/DeepSeek-V4-Flash@deepinfra", ...}',
+            "mistral": '{"model": "mistral-medium-3-5@mistral", ...}',
         },
     }
