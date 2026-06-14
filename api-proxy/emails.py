@@ -56,9 +56,9 @@ class ListRequest(BaseModel):
     offset: int = 0
 
 
-# ── GET /email/accounts — Liste les comptes configurés ──
+# ── GET /emails/accounts — Liste les comptes configurés ──
 
-@router.get("/email/accounts")
+@router.get("/emails/accounts")
 async def get_accounts():
     """Retourne la liste des comptes email configurés (sans mots de passe)."""
     try:
@@ -68,9 +68,9 @@ async def get_accounts():
         raise HTTPException(status_code=500, detail=f"Erreur chargement comptes : {e}")
 
 
-# ── POST /email/fetch — Récupère les emails récents ──
+# ── POST /emails/fetch — Récupère les emails récents ──
 
-@router.post("/email/fetch")
+@router.post("/emails/fetch")
 async def fetch(req: FetchRequest):
     """
     Récupère les emails récents depuis un ou tous les comptes configurés.
@@ -167,9 +167,9 @@ async def fetch(req: FetchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── GET /email/folders — Liste les dossiers IMAP ──
+# ── GET /emails/folders — Liste les dossiers IMAP ──
 
-@router.get("/email/folders")
+@router.get("/emails/folders")
 async def get_folders(
         account_id: Optional[str] = None,
 ):
@@ -213,9 +213,9 @@ async def get_folders(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── POST /email/send — Envoie un email ──
+# ── POST /emails/send — Envoie un email ──
 
-@router.post("/email/send")
+@router.post("/emails/send")
 async def send(req: SendRequest):
     """
     Envoie un email via SMTP.
@@ -263,9 +263,9 @@ async def send(req: SendRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── GET /email/list — Liste les emails téléchargés localement ──
+# ── GET /emails/list — Liste les emails téléchargés localement ──
 
-@router.get("/email/list")
+@router.get("/emails/list")
 async def list_emails(
         query: Optional[str] = None,
         from_addr: Optional[str] = None,
