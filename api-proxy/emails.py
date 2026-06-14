@@ -366,17 +366,23 @@ def _format_sender_for_filename(sender: str) -> str:
     return _safe_filename(email_addr.split('@')[0])
 
 
-def _get_email_dir(workspace_dir: str = None) -> str:
+def _get_email_dir(workspace_dir: str = None, account_id: str = None) -> str:
     base = workspace_dir or DEFAULT_EMAILS_DIR
+    if account_id:
+        d = os.path.join(base, _safe_filename(account_id))
+        os.makedirs(d, exist_ok=True)
+        return d
     return base
 
 
 def _get_accounts_path(workspace_dir: str = None) -> str:
-    return os.path.join(_get_email_dir(workspace_dir), ACCOUNTS_FILE)
+    # Le fichier accounts.json reste à la racine du répertoire des emails
+    return os.path.join(workspace_dir or DEFAULT_EMAILS_DIR, ACCOUNTS_FILE)
 
 
-def _get_attachments_dir(workspace_dir: str = None) -> str:
-    d = os.path.join(_get_email_dir(workspace_dir), ATTACHMENTS_DIR)
+def _get_attachments_dir(workspace_dir: str = None, account_id: str = None) -> str:
+    base = _get_email_dir(workspace_dir, account_id)
+    d = os.path.join(base, ATTACHMENTS_DIR)
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -457,9 +463,12 @@ def _parse_and_save_email(raw_email: bytes, account: EmailAccount, folder: str, 
     msg_id = msg.get("Message-ID", f"no-id-{time.time()}")
     msg_id_hash = _short_hash(msg_id)
 
+    # Répertoire spécifique au compte
+    account_dir = _get_email_dir(workspace_dir, account.id)
+
     # Vérifier si déjà sauvegardé
     filename_prefix = f"*_{msg_id_hash}.eml"
-    existing_files = list(Path(workspace_dir).glob(f"*_{msg_id_hash}.eml"))
+    existing_files = list(Path(account_dir).glob(f"*_{msg_id_hash}.eml"))
     if existing_files:
         return None
 
@@ -473,12 +482,12 @@ def _parse_and_save_email(raw_email: bytes, account: EmailAccount, folder: str, 
     filename = f"{timestamp}_{sender_slug}_{msg_id_hash}.eml"
 
     # Sauvegarde du fichier EML
-    file_path = os.path.join(workspace_dir, filename)
+    file_path = os.path.join(account_dir, filename)
     with open(file_path, "wb") as f:
         f.write(raw_email)
 
     # Extraction des pièces jointes
-    attachments_dir = _get_attachments_dir(workspace_dir)
+    attachments_dir = _get_attachments_dir(workspace_dir, account.id)
     attachment_files = _extract_attachments(msg, msg_id_hash, attachments_dir)
 
     return {
@@ -643,8 +652,9 @@ def send_email(account: EmailAccount, to: list, subject: str, body: str, cc: lis
             for path_str in attachment_paths:
                 p = Path(path_str)
                 if not p.exists():
-                    # Essayer relativement au workspace
-                    p = Path(workspace_dir) / path_str
+                    # Essayer relativement au dossier attachments du compte
+                    att_dir = Path(_get_attachments_dir(workspace_dir, account.id))
+                    p = att_dir / path_str
                     if not p.exists():
                         logger.warning(f"Pièce jointe introuvable : {path_str}")
                         continue
