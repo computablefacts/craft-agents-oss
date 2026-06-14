@@ -9,13 +9,13 @@ import os
 import re
 import smtplib
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from email.header import decode_header, make_header
+from email.header import decode_header
 from email.message import EmailMessage
 from email.policy import default as email_policy
-from email.utils import parsedate_to_datetime, formataddr
-from fastapi import APIRouter, Request, HTTPException
+from email.utils import formataddr
+from fastapi import APIRouter, HTTPException
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional
@@ -47,13 +47,6 @@ class SendRequest(BaseModel):
     bcc: Optional[list[str]] = None
     body_html: Optional[str] = None
     attachment_paths: Optional[list[str]] = None
-
-
-class ListRequest(BaseModel):
-    query: Optional[str] = None
-    from_addr: Optional[str] = None
-    limit: int = 50
-    offset: int = 0
 
 
 # ── GET /emails/accounts — Liste les comptes configurés ──
@@ -263,47 +256,12 @@ async def send(req: SendRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── GET /emails/list — Liste les emails téléchargés localement ──
-
-@router.get("/emails/list")
-async def list_emails(
-        query: Optional[str] = None,
-        from_addr: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
-):
-    """
-    Liste et recherche les emails téléchargés localement.
-
-    - query : recherche textuelle (sujet, expéditeur)
-    - from_addr : filtre par expéditeur
-    - limit : nombre max de résultats (défaut: 50)
-    - offset : pagination (défaut: 0)
-    """
-    try:
-        emails_dir = os.path.join(WORKSPACE_EMAILS_DIR, "emails")
-        result = list_local_emails(
-            query=query,
-            from_addr=from_addr,
-            limit=limit,
-            offset=offset,
-            workspace_dir=emails_dir,
-        )
-        result["emails_dir"] = emails_dir
-        result["attachments_dir"] = os.path.join(emails_dir, "attachments")
-        return result
-    except Exception as e:
-        logger.exception("Erreur list emails")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ── Répertoire de base des emails ──
 DEFAULT_EMAILS_DIR = os.path.expanduser(
     "~/.craft-agent/workspaces/my-workspace/emails"
 )
 ACCOUNTS_FILE = "accounts.json"
 ATTACHMENTS_DIR = "attachments"
-INDEX_FILE = "index.json"
 
 # Taille max d'une pièce-jointe (50 Mo)
 MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024
@@ -329,22 +287,6 @@ class EmailAccount:
     def __post_init__(self):
         if not self.smtp_server:
             self.smtp_server = self.imap_server
-
-
-@dataclass
-class EmailInfo:
-    """Métadonnées d'un email téléchargé."""
-    filename: str
-    message_id_hash: str
-    date: str
-    subject: str
-    sender: str
-    recipients: list
-    account_id: str
-    has_attachments: bool
-    attachment_files: list = field(default_factory=list)
-    size: int = 0
-    folder: str = "INBOX"
 
 
 @dataclass
@@ -439,10 +381,6 @@ def _get_attachments_dir(workspace_dir: str = None) -> str:
     return d
 
 
-def _get_index_path(workspace_dir: str = None) -> str:
-    return os.path.join(_get_email_dir(workspace_dir), INDEX_FILE)
-
-
 # ═══════════════════════════════════════════════════════════════════
 #  Gestion des comptes
 # ═══════════════════════════════════════════════════════════════════
@@ -481,34 +419,6 @@ def list_accounts(workspace_dir: str = None) -> list:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Indexation locale
-# ═══════════════════════════════════════════════════════════════════
-
-def _load_index(workspace_dir: str = None) -> dict:
-    path = _get_index_path(workspace_dir)
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _save_index(index: dict, workspace_dir: str = None):
-    path = _get_index_path(workspace_dir)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(index, f, indent=2, ensure_ascii=False)
-
-
-def _add_to_index(email_info: EmailInfo, workspace_dir: str = None):
-    index = _load_index(workspace_dir)
-    # On indexe par hash de Message-ID pour éviter les doublons
-    index[email_info.message_id_hash] = asdict(email_info)
-    _save_index(index, workspace_dir)
-
-
-# ═══════════════════════════════════════════════════════════════════
 #  Logique IMAP (Fetch)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -540,17 +450,17 @@ def _fetch_email_data(imap: imaplib.IMAP4_SSL, msg_id: int):
     return None
 
 
-def _parse_and_save_email(raw_email: bytes, account: EmailAccount, folder: str, workspace_dir: str) -> Optional[
-    EmailInfo]:
-    """Parse l'email, sauvegarde le fichier .eml et indexe les métadonnées."""
+def _parse_and_save_email(raw_email: bytes, account: EmailAccount, folder: str, workspace_dir: str) -> Optional[dict]:
+    """Parse l'email, sauvegarde le fichier .eml."""
     msg = email.message_from_bytes(raw_email, policy=email_policy)
 
     msg_id = msg.get("Message-ID", f"no-id-{time.time()}")
     msg_id_hash = _short_hash(msg_id)
 
-    # Vérifier si déjà indexé
-    index = _load_index(workspace_dir)
-    if msg_id_hash in index:
+    # Vérifier si déjà sauvegardé
+    filename_prefix = f"*_{msg_id_hash}.eml"
+    existing_files = list(Path(workspace_dir).glob(f"*_{msg_id_hash}.eml"))
+    if existing_files:
         return None
 
     dt = _datetime_from_email(msg) or datetime.now(timezone.utc)
@@ -571,23 +481,11 @@ def _parse_and_save_email(raw_email: bytes, account: EmailAccount, folder: str, 
     attachments_dir = _get_attachments_dir(workspace_dir)
     attachment_files = _extract_attachments(msg, msg_id_hash, attachments_dir)
 
-    # Création des métadonnées
-    info = EmailInfo(
-        filename=filename,
-        message_id_hash=msg_id_hash,
-        date=dt.isoformat(),
-        subject=subject,
-        sender=sender,
-        recipients=_parse_addresses(msg.get("To", "")),
-        account_id=account.id,
-        has_attachments=len(attachment_files) > 0,
-        attachment_files=attachment_files,
-        size=len(raw_email),
-        folder=folder
-    )
-
-    _add_to_index(info, workspace_dir)
-    return info
+    return {
+        "filename": filename,
+        "message_id_hash": msg_id_hash,
+        "attachment_files": attachment_files
+    }
 
 
 def _extract_attachments(msg: email.message.Message, msg_id_hash: str, attachments_dir: str) -> list:
@@ -646,7 +544,7 @@ def _fetch_folder(imap: imaplib.IMAP4_SSL, account: EmailAccount, folder: str, s
                 info = _parse_and_save_email(raw_data, account, folder, workspace_dir)
                 if info:
                     result.fetched += 1
-                    result.attachments_saved += len(info.attachment_files)
+                    result.attachments_saved += len(info.get("attachment_files", []))
                 else:
                     result.skipped_duplicates += 1
 
@@ -784,41 +682,3 @@ def send_email(account: EmailAccount, to: list, subject: str, body: str, cc: lis
     except Exception as e:
         logger.error(f"Erreur envoi email: {e}")
         return {"status": "error", "detail": str(e)}
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Recherche locale
-# ═══════════════════════════════════════════════════════════════════
-
-def list_local_emails(query: str = None, from_addr: str = None, limit: int = 50, offset: int = 0,
-                      workspace_dir: str = None) -> dict:
-    """Recherche dans l'index JSON local."""
-    index = _load_index(workspace_dir)
-    emails = list(index.values())
-
-    # Tri par date décroissante
-    emails.sort(key=lambda x: x.get("date", ""), reverse=True)
-
-    # Filtrage
-    filtered = []
-    for e in emails:
-        matches = True
-        if from_addr and from_addr.lower() not in e.get("sender", "").lower():
-            matches = False
-        if query:
-            q = query.lower()
-            if q not in e.get("subject", "").lower() and q not in e.get("sender", "").lower():
-                matches = False
-
-        if matches:
-            filtered.append(e)
-
-    total = len(filtered)
-    page = filtered[offset: offset + limit]
-
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "emails": page
-    }
