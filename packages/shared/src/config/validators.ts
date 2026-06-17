@@ -1142,7 +1142,7 @@ const BaseLabelConfigSchema = z.object({
   color: EntityColorSchema.optional(),
   icon: z.string().optional(),
   /** Optional hint: what type of value this label carries (omit for boolean labels) */
-  valueType: z.enum(['string', 'number', 'date']).optional(),
+  valueType: z.enum(['string', 'number', 'date', 'link']).optional(),
   /** Auto-label rules: regex patterns that scan messages and apply labels automatically */
   autoRules: z.array(AutoLabelRuleSchema).optional(),
 });
@@ -1154,7 +1154,7 @@ type LabelConfigSchemaType = z.ZodType<{
   name: string;
   color?: unknown;
   icon?: string;
-  valueType?: 'string' | 'number' | 'date';
+  valueType?: 'string' | 'number' | 'date' | 'link';
   autoRules?: Array<{ pattern: string; flags?: string; valueTemplate?: string; description?: string }>;
   children?: LabelConfigSchemaType[];
 }>;
