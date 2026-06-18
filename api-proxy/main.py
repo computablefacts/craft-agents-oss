@@ -1,7 +1,6 @@
 import logging
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from models import router as models_router
 from emails import router as emails_router
 
 load_dotenv()
