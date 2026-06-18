@@ -70,7 +70,7 @@ async def fetch(req: FetchRequest):
 
     - account_id : si non spécifié, récupère depuis tous les comptes
     - max_age_minutes : horizon temporel (défaut: 60 min) — ignoré si start_date est fourni
-    - folders : liste des dossiers IMAP (défaut: ["INBOX"])
+    - folders : liste des dossiers IMAP (défaut: tous les dossiers sauf junk/trash/spam)
     - start_date : date de début ISO ou "YYYY-MM-DD" (optionnel, prime sur max_age_minutes)
       Exemples : "2026-01-01", "2026-01-15T10:00:00+01:00"
     """
@@ -575,18 +575,39 @@ def fetch_emails(account: EmailAccount, max_age_minutes: int = 60, folders: list
                  since_dt: Optional[datetime] = None, workspace_dir: str = None) -> FetchResult:
     """Se connecte en IMAP et récupère les nouveaux emails."""
     result = FetchResult(account.id, account.label)
-    if not folders:
-        folders = ["INBOX"]
 
     # Si since_dt n'est pas fourni, on calcule à partir de max_age_minutes
     if not since_dt:
         since_dt = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
 
+    # Exclure certains dossiers indésirables par mot-clé
+    excluded_keywords = ("junk", "trash", "spam")
+
     try:
         imap = imaplib.IMAP4_SSL(account.imap_server, account.imap_port)
         imap.login(account.username, account.password)
 
+        # Par défaut, on récupère tous les dossiers si non spécifié
+        if not folders:
+            status, folder_list = imap.list()
+            folders = []
+            if status == "OK":
+                for f in folder_list:
+                    # Format typique: '(\\\\HasNoChildren) "/" "INBOX"'
+                    parts = f.decode().split(' "/" ')
+                    if len(parts) == 2:
+                        folders.append(parts[1].strip('"'))
+                    else:
+                        # Fallback basique
+                        folders.append(f.decode())
+            if not folders:
+                folders = ["INBOX"]
+
         for folder in folders:
+            lname = folder.lower()
+            if any(k in lname for k in excluded_keywords):
+                logger.info(f"[{account.label}] Dossier exclu ignoré: {folder}")
+                continue
             _fetch_folder(imap, account, folder, since_dt, workspace_dir, result)
 
         imap.logout()
@@ -613,6 +634,10 @@ def list_imap_folders(account: EmailAccount, workspace_dir: str = None) -> dict:
                     folders.append(parts[1].strip('"'))
                 else:
                     folders.append(f.decode())
+
+        # Filtrer les dossiers indésirables par mot-clé
+        excluded_keywords = ("junk", "trash", "spam")
+        folders = [fld for fld in folders if not any(k in fld.lower() for k in excluded_keywords)]
 
         imap.logout()
         return {
