@@ -11,5 +11,4 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="API Proxy")
 
 # Include routers
-app.include_router(models_router)
 app.include_router(emails_router)
