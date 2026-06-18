@@ -11,10 +11,10 @@ import smtplib
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from email.header import decode_header
+from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.policy import default as email_policy
-from email.utils import formataddr
+from email.utils import formataddr, parsedate_to_datetime
 from fastapi import APIRouter, HTTPException
 from pathlib import Path
 from pydantic import BaseModel
@@ -332,7 +332,8 @@ def _datetime_from_email(msg: email.message.Message) -> Optional[datetime]:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erreur extraction date: {e}")
         return None
 
 
@@ -343,7 +344,8 @@ def _decode_header_value(value) -> str:
     try:
         decoded = decode_header(value)
         return str(make_header(decoded))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erreur décodage en-tête: {e}")
         return str(value)
 
 
@@ -355,7 +357,8 @@ def _parse_addresses(addr_str: str) -> list:
         # decode_header peut être nécessaire ici aussi si l'en-tête est encodé
         decoded_addr = _decode_header_value(addr_str)
         return [a.strip() for a in decoded_addr.split(",") if a.strip()]
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erreur parsing adresses: {e}")
         return [addr_str]
 
 
@@ -618,6 +621,7 @@ def list_imap_folders(account: EmailAccount, workspace_dir: str = None) -> dict:
             "folders": folders
         }
     except Exception as e:
+        logger.error(f"Erreur liste dossiers IMAP pour {account.label}: {e}")
         return {
             "account_id": account.id,
             "account_label": account.label,
