@@ -168,7 +168,7 @@ rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
 cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
 
 # 6. Copy network interceptor sources (for Pi subprocess; Claude no longer
-#    uses --preload — see Phase 2 in plans/sdk-uplift-plan.md).
+#    uses --preload — Phase 2 will move that to SDK hooks or a local proxy).
 INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/unified-network-interceptor.ts"
 require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/unified-network-interceptor.ts exists."
 echo "Copying interceptor (for Pi subprocess)..."

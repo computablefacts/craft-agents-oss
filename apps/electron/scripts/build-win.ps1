@@ -225,7 +225,7 @@ Remove-Item -Recurse -Force "$ElectronDir\node_modules\@vscode\ripgrep" -ErrorAc
 Copy-Item -Recurse -Force $RgSource "$ElectronDir\node_modules\@vscode\"
 
 # 6. Copy network interceptor sources (for Pi subprocess; Claude no longer
-#    uses --preload — see Phase 2 in plans/sdk-uplift-plan.md).
+#    uses --preload — Phase 2 will move that to SDK hooks or a local proxy).
 $InterceptorSource = "$RootDir\packages\shared\src\unified-network-interceptor.ts"
 if (-not (Test-Path $InterceptorSource)) {
     Write-Host "ERROR: Interceptor not found at $InterceptorSource" -ForegroundColor Red
