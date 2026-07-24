@@ -783,17 +783,25 @@ app.whenReady().then(async () => {
         }
       })
 
-      // Transfer session to another workspace — orchestrated in main process
-      // so large bundles can be moved directly between owning servers.
-      ipcMain.handle('session:transferToRemoteWorkspace', async (_event, sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
+      // Transfer session to another workspace — orchestrated in main process so
+      // bundles can be moved directly between owning servers. Every connection is
+      // outbound from this process: remote sources/targets are reached over WS,
+      // a local target imports in-process on the embedded server — the local
+      // machine never needs to accept an inbound connection.
+      ipcMain.handle('session:transferToWorkspace', async (_event, sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
         const idx = sessionIndex ?? 0
         const count = sessionCount ?? 1
         const { getWorkspaceByNameOrId } = await import('@craft-agent/shared/config')
         const { connectToRemote } = await import('./handlers/workspace')
         const { CHUNKED_TRANSFER_THRESHOLD, getChunkCount, invokeChunked, prepareChunkedPayload } = await import('./chunked-rpc')
 
+        // The pull side (sessions:export) returns the whole bundle as a single
+        // unchunked response frame — up to MAX_BUNDLE_SIZE_BYTES over WAN — so
+        // the 30s default request timeout is not enough for transfer clients.
+        const TRANSFER_REQUEST_TIMEOUT_MS = 120_000
+
         const targetWorkspace = getWorkspaceByNameOrId(targetWorkspaceId)
-        if (!targetWorkspace?.remoteServer) throw new Error(`Workspace ${targetWorkspaceId} has no remote server`)
+        if (!targetWorkspace) throw new Error(`Workspace ${targetWorkspaceId} not found`)
         if (!sessionManager) throw new Error('Session manager not initialized')
 
         const sourceWorkspaceLocalId = windowManager?.getWorkspaceForWindow(_event.sender.id)
@@ -807,7 +815,7 @@ app.whenReady().then(async () => {
         if (sourceWorkspace.remoteServer) {
           const { url: sourceUrl, token: sourceToken, remoteWorkspaceId: sourceRemoteWorkspaceId } = sourceWorkspace.remoteServer
           console.log(`[Transfer] Exporting remote-owned session ${sessionId} from workspace ${sourceRemoteWorkspaceId}...`)
-          const { client: sourceClient, error: sourceError } = await connectToRemote(sourceUrl, sourceToken, sourceRemoteWorkspaceId)
+          const { client: sourceClient, error: sourceError } = await connectToRemote(sourceUrl, sourceToken, sourceRemoteWorkspaceId, { requestTimeout: TRANSFER_REQUEST_TIMEOUT_MS })
           if (!sourceClient) throw new Error(sourceError ?? 'Connection failed to source remote server')
 
           try {
@@ -848,9 +856,24 @@ app.whenReady().then(async () => {
 
         console.log(`[Transfer] Export complete: ${bundle.session?.messages?.length ?? 0} messages, ${bundle.files?.length ?? 0} files`)
 
+        const emitProgress = (chunkSent: number, chunkTotal: number) => {
+          try { _event.sender.send('transfer:progress', { sessionIndex: idx, sessionCount: count, chunkSent, chunkTotal }) } catch { /* renderer may be gone */ }
+        }
+
+        if (!targetWorkspace.remoteServer) {
+          // Local target — import in-process on the embedded server. Same method
+          // the sessions:import RPC handler runs on a remote target, so the
+          // result shape matches the remote path.
+          console.log(`[Transfer] Target workspace ${targetWorkspace.id} is local → importing in-process`)
+          emitProgress(0, 1)
+          const result = await sessionManager.importSession(targetWorkspace.id, bundle, 'fork')
+          emitProgress(1, 1)
+          return result
+        }
+
         const { url, token, remoteWorkspaceId } = targetWorkspace.remoteServer
         console.log(`[Transfer] Connecting to target remote server: ${url}`)
-        const { client, error } = await connectToRemote(url, token, remoteWorkspaceId)
+        const { client, error } = await connectToRemote(url, token, remoteWorkspaceId, { requestTimeout: TRANSFER_REQUEST_TIMEOUT_MS })
         if (!client) throw new Error(error ?? 'Connection failed to target remote server')
         console.log('[Transfer] Connected to target remote server')
 
@@ -858,10 +881,6 @@ app.whenReady().then(async () => {
           const preparedBundle = prepareChunkedPayload(bundle)
           const payloadSize = preparedBundle.bytes.length
           const payloadMB = (payloadSize / (1024 * 1024)).toFixed(1)
-
-          const emitProgress = (chunkSent: number, chunkTotal: number) => {
-            try { _event.sender.send('transfer:progress', { sessionIndex: idx, sessionCount: count, chunkSent, chunkTotal }) } catch { /* renderer may be gone */ }
-          }
 
           if (payloadSize < CHUNKED_TRANSFER_THRESHOLD) {
             console.log(`[Transfer] Bundle size: ${payloadMB}MB (< 5MB threshold) → using direct RPC`)

@@ -30,6 +30,8 @@ import {
   RefreshCw,
   Tag,
   Send,
+  FolderKanban,
+  Check,
 } from 'lucide-react'
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { getStateColor, getStateIcon, type SessionStatusId } from '@/config/session-status-config'
@@ -42,6 +44,12 @@ import { getSessionStatus, hasUnreadMeta, hasMessagesMeta } from '@/utils/sessio
 import { MessagingSessionMenuItem } from '@/components/messaging/MessagingSessionMenuItem'
 import { useSessionMenuActions } from '@/hooks/useSessionMenuActions'
 
+export interface SessionMenuProjectOption {
+  id: string
+  slug: string
+  name: string
+}
+
 export interface SessionMenuProps {
   /** Session data — display state is derived from this */
   item: SessionMeta
@@ -52,7 +60,11 @@ export interface SessionMenuProps {
   /** Callback when labels are toggled (receives full updated labels array) */
   onLabelsChange?: (labels: string[]) => void
   /** Whether multiple workspaces exist (enables "Send to Workspace" item) */
-  hasRemoteWorkspaces?: boolean
+  hasTransferTargets?: boolean
+  /** Workspace projects (omit to hide the submenu) */
+  projects?: SessionMenuProjectOption[]
+  /** Callback for binding/unbinding the session to a project. `null` = unbind. */
+  onSetProjectId?: (projectId: string | null) => void
   /** Callbacks */
   onRename: () => void
   onFlag: () => void
@@ -85,7 +97,9 @@ export function SessionMenu({
   onOpenInNewWindow,
   onSendToWorkspace,
   onDelete,
-  hasRemoteWorkspaces,
+  hasTransferTargets,
+  projects = [],
+  onSetProjectId,
 }: SessionMenuProps) {
   const { t } = useTranslation()
 
@@ -130,7 +144,7 @@ export function SessionMenu({
       )}
 
       {/* Send to Workspace — visible when at least one other workspace exists */}
-      {hasRemoteWorkspaces && onSendToWorkspace && (
+      {hasTransferTargets && onSendToWorkspace && (
         <MenuItem onClick={onSendToWorkspace}>
           <Send className="h-3.5 w-3.5" />
           <span className="flex-1">{t("sessionMenu.sendToWorkspace")}</span>
@@ -184,6 +198,34 @@ export function SessionMenu({
               onToggle={actions.toggleLabel}
               menu={{ MenuItem, Separator, Sub, SubTrigger, SubContent }}
             />
+          </SubContent>
+        </Sub>
+      )}
+
+      {/* Projects submenu - workspace projects + "No project" to clear binding */}
+      {projects.length > 0 && onSetProjectId && (
+        <Sub>
+          <SubTrigger className="pr-2">
+            <FolderKanban className="h-3.5 w-3.5" />
+            <span className="flex-1">{t("sessionMenu.projects")}</span>
+          </SubTrigger>
+          <SubContent>
+            <MenuItem onClick={() => onSetProjectId(null)}>
+              {!item.projectId && <Check className="h-3.5 w-3.5" />}
+              <span className={item.projectId ? 'flex-1 ml-[18px]' : 'flex-1'}>
+                {t("sessionMenu.noProject")}
+              </span>
+            </MenuItem>
+            <Separator />
+            {projects.map((p) => {
+              const isBound = item.projectId === p.id
+              return (
+                <MenuItem key={p.id} onClick={() => onSetProjectId(p.id)}>
+                  {isBound && <Check className="h-3.5 w-3.5" />}
+                  <span className={isBound ? 'flex-1' : 'flex-1 ml-[18px]'}>{p.name}</span>
+                </MenuItem>
+              )
+            })}
           </SubContent>
         </Sub>
       )}

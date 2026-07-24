@@ -72,3 +72,7 @@ export { handleGetSessionInfo } from './get-session-info.ts';
 export type { GetSessionInfoArgs } from './get-session-info.ts';
 export { handleListSessions } from './list-sessions.ts';
 export type { ListSessionsArgs } from './list-sessions.ts';
+export { handleListBackgroundTasks } from './list-background-tasks.ts';
+export type { ListBackgroundTasksArgs } from './list-background-tasks.ts';
+export { handleCreateTask } from './create-task.ts';
+export type { CreateTaskArgs } from './create-task.ts';

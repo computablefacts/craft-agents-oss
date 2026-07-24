@@ -92,7 +92,7 @@ export interface CompactSessionMenuProps {
   item: SessionMeta
   sessionStatuses: SessionStatus[]
   labels?: LabelConfig[]
-  hasRemoteWorkspaces?: boolean
+  hasTransferTargets?: boolean
 
   // Callbacks — same as SessionMenu
   onLabelsChange?: (labels: string[]) => void
@@ -130,7 +130,7 @@ export function CompactSessionMenu({
   item,
   sessionStatuses,
   labels = [],
-  hasRemoteWorkspaces,
+  hasTransferTargets,
   onLabelsChange,
   onRename,
   onFlag,
@@ -298,7 +298,7 @@ export function CompactSessionMenu({
               isArchived={isArchived}
               hasMessages={_hasMessages}
               hasUnread={_hasUnread}
-              hasRemoteWorkspaces={hasRemoteWorkspaces}
+              hasTransferTargets={hasTransferTargets}
               onShare={closeAfter(actions.share)}
               onOpenShareSub={() => setView('share')}
               onSendToWorkspace={closeAfter(onSendToWorkspace)}
@@ -371,7 +371,7 @@ interface RootPaneProps {
   isArchived: boolean
   hasMessages: boolean
   hasUnread: boolean
-  hasRemoteWorkspaces?: boolean
+  hasTransferTargets?: boolean
   onShare?: () => void
   onOpenShareSub: () => void
   onSendToWorkspace?: () => void
@@ -402,7 +402,7 @@ function RootPane({
   isArchived,
   hasMessages,
   hasUnread,
-  hasRemoteWorkspaces,
+  hasTransferTargets,
   onShare,
   onOpenShareSub,
   onSendToWorkspace,
@@ -446,7 +446,7 @@ function RootPane({
         />
       )}
 
-      {hasRemoteWorkspaces && onSendToWorkspace && (
+      {hasTransferTargets && onSendToWorkspace && (
         <Row icon={<Send className="h-4 w-4" />} label={t('sessionMenu.sendToWorkspace')} onTap={onSendToWorkspace} />
       )}
 
